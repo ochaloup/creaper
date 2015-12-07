@@ -1,6 +1,16 @@
 package org.wildfly.extras.creaper.core.online.operations.admin;
 
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
+
+import java.io.IOException;
+import java.util.concurrent.TimeoutException;
+
 import org.jboss.arquillian.junit.Arquillian;
+import org.junit.After;
+import org.junit.Before;
+import org.junit.Test;
+import org.junit.runner.RunWith;
 import org.wildfly.extras.creaper.core.ManagementClient;
 import org.wildfly.extras.creaper.core.ManagementVersion;
 import org.wildfly.extras.creaper.core.online.ModelNodeResult;
@@ -9,16 +19,6 @@ import org.wildfly.extras.creaper.core.online.OnlineOptions;
 import org.wildfly.extras.creaper.core.online.operations.Address;
 import org.wildfly.extras.creaper.core.online.operations.Operations;
 import org.wildfly.extras.creaper.core.online.operations.ReadAttributeOption;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-
-import java.io.IOException;
-import java.util.concurrent.TimeoutException;
-
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
 
 @RunWith(Arquillian.class)
 public class AdminTest {
@@ -69,5 +69,22 @@ public class AdminTest {
                 admin.reloadIfRequired();
             }
         }
+    }
+
+    @Test
+    public void notRestartedReload() throws IOException, InterruptedException, TimeoutException {
+        // transaction jts will be used
+        ops.writeAttribute(Address.subsystem("transactions"), "jts", true);
+        assertTrue("Server restart should be required as attribute of jts was changed", admin.isRestartRequired());
+        assertFalse("Server reload should not be required as jts change requires only reload", admin.isReloadRequired());
+
+        ops.writeAttribute(Address.subsystem("transactions"), "jts", false);
+        assertTrue("Server restart is expected to still be required as some operation before required restarting of server", admin.isRestartRequired());
+        assertFalse("Server reload should not be required as jts change requires only reload", admin.isReloadRequired());
+
+        admin.reload();
+
+        assertFalse("After reload reload should not be required", admin.isReloadRequired());
+        assertTrue("After reload restart still should be required", admin.isRestartRequired());
     }
 }

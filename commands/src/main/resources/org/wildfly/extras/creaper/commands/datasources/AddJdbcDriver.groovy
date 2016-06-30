@@ -1,6 +1,19 @@
-def isExistingDriver = datasources.datasources.drivers.driver.any { it.'@name' == driverName }
-if (isExistingDriver) {
-    throw new IllegalStateException("Driver $driverName already exists in configuration. Use different name.")
+import org.wildfly.extras.creaper.commands.foundation.UnexpectedElementStateMode;
+import org.wildfly.extras.creaper.core.CommandFailedException;
+
+// work with existing node
+def isExistingDriverName = datasources.datasources.drivers.driver.any { it.'@name' == driverName }
+if(isExistingDriverName) {
+    switch (existingElementMode) {
+        case UnexpectedElementStateMode.IGNORE:
+            return
+        case UnexpectedElementStateMode.EXCEPTION:
+            throw new IllegalStateException("Driver $driverName already exists in configuration. Use different name.")
+        case UnexpectedElementStateMode.REPLACE:
+            def driver = datasources.datasources.drivers.driver.find { it.@name == driverName }
+            driver.replaceNode {}
+            break
+    }
 }
 
 // if module slot defined then it goes after colon to module name

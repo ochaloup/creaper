@@ -1,5 +1,6 @@
 package org.wildfly.extras.creaper.commands.datasources;
 
+import org.wildfly.extras.creaper.commands.foundation.UnexpectedElementStateMode;
 import org.wildfly.extras.creaper.commands.foundation.offline.xml.GroovyXmlTransform;
 import org.wildfly.extras.creaper.commands.foundation.offline.xml.Subtree;
 import org.wildfly.extras.creaper.core.CommandFailedException;
@@ -10,8 +11,6 @@ import org.wildfly.extras.creaper.core.online.OnlineCommandContext;
 import org.wildfly.extras.creaper.core.online.operations.Address;
 import org.wildfly.extras.creaper.core.online.operations.Operations;
 import org.wildfly.extras.creaper.core.online.operations.Values;
-
-import java.io.IOException;
 
 /**
  * Command which creates a new JDBC driver in the {@code datasources} subsystem. It needs an existing
@@ -24,6 +23,7 @@ public final class AddJdbcDriver implements OnlineCommand, OfflineCommand {
     private final String xaDatasourceClass;
     private final String module;
     private final String moduleSlot;
+    private final UnexpectedElementStateMode existingElementMode;
 
     private AddJdbcDriver(Builder builder) {
         this.driverName = builder.driverName;
@@ -32,13 +32,30 @@ public final class AddJdbcDriver implements OnlineCommand, OfflineCommand {
         this.xaDatasourceClass = builder.xaDatasourceClass;
         this.module = builder.module;
         this.moduleSlot = builder.moduleSlot;
+        this.existingElementMode = builder.existingElementMode;
     }
 
     @Override
-    public void apply(OnlineCommandContext ctx) throws IOException {
+    public void apply(OnlineCommandContext ctx) throws Exception {
         Operations ops = new Operations(ctx.client);
 
-        ops.add(Address.subsystem("datasources").and("jdbc-driver", driverName), Values.empty()
+        Address jdbcDriverAddr = Address.subsystem("datasources").and("jdbc-driver", driverName);
+
+        boolean exists = ops.exists(jdbcDriverAddr);
+        if(exists) {
+            switch(existingElementMode) {
+                case REPLACE:
+                    ops.remove(jdbcDriverAddr);
+                    break;
+                case EXCEPTION:
+                    throw new CommandFailedException("Jdbc driver " + driverName
+                            + " already exist that way can't be added");
+                case IGNORE:
+                    return;
+            }
+        }
+
+        ops.add(jdbcDriverAddr, Values.empty()
                 .and("driver-name", driverName)
                 .and("driver-module-name", module)
                 .andOptional("module-slot", moduleSlot)
@@ -57,7 +74,9 @@ public final class AddJdbcDriver implements OnlineCommand, OfflineCommand {
                 .parameter("driverClass", this.driverClass)
                 .parameter("datasourceClass", this.datasourceClass)
                 .parameter("xaDatasourceClass", this.xaDatasourceClass)
+                .parameter("existingElementMode", this.existingElementMode)
                 .build();
+
         ctx.client.apply(transform);
     }
 
@@ -79,6 +98,7 @@ public final class AddJdbcDriver implements OnlineCommand, OfflineCommand {
         private String xaDatasourceClass;
         private String module;
         private String moduleSlot;
+        private UnexpectedElementStateMode existingElementMode = UnexpectedElementStateMode.EXCEPTION;
 
         /**
          * @param driverName Defines the JDBC driver the datasource should use. It is a symbolic name matching
@@ -128,6 +148,24 @@ public final class AddJdbcDriver implements OnlineCommand, OfflineCommand {
          */
         public Builder moduleSlot(String moduleSlot) {
             this.moduleSlot = moduleSlot;
+            return this;
+        }
+
+        /**
+         * If builder with the given name exists it will be replaced.<br>
+         * (by default exception would be thrown)
+         */
+        public final Builder replaceExisting() {
+            this.existingElementMode = UnexpectedElementStateMode.REPLACE;
+            return this;
+        }
+
+        /**
+         * If builder with the given name exists nothing will be done.
+         * (by default exception would be thrown)
+         */
+        public final Builder ignoreExisting() {
+            this.existingElementMode = UnexpectedElementStateMode.IGNORE;
             return this;
         }
 
